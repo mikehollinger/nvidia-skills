@@ -2,58 +2,80 @@
 
 Evaluation of the `vss-deploy-video-embedding` skill before publication through NVSkills-Eval.
 
-This benchmark documents validation of the standalone RT-Embed (`rtvi-embed`) bring-up path. The goal is to record whether the skill is safe, correct, and useful for agents before broader workflow use.
+This benchmark summarizes 3-Tier Evaluation from NVSkills-Eval results for the skill. The goal is to document whether the skill is safe, discoverable, effective, and useful for agents before it is published for broader workflow use.
 
 ## Evaluation Summary
 
 - Skill: `vss-deploy-video-embedding`
-- Evaluation date: 2026-05-29
-- Eval spec: `skills/vss-deploy-video-embedding/evals/standalone_deploy.json`
-- Platform (manual): RTX Pro (3× RTX PRO 6000)
-- Overall verdict: **PASS** (manual validation)
-- Tier 3 live agent evaluation (L40S Skills Eval): **pending** — add results here after a clean run passes
+- Evaluation date: 2026-07-15
+- NVSkills-Eval profile: `external`
+- Environment: `astra-sandbox`
+- Dataset: 2 evaluation tasks
+- Attempts per task: 1
+- Pass threshold: 50%
+- Overall verdict: PASS
 
 ## Agents Used
 
-- Manual validation: operator following `SKILL.md` on RTX Pro
-- Tier 3 Skills Eval agent: not yet recorded in this report
+- `claude-code`
+- `codex`
 
-## Eval Spec Coverage
+## Metrics Used
 
-The `standalone_deploy.json` spec checks:
+Reported benchmark dimensions:
 
-1. Standalone deploy from `deploy/docker/services/rtvi/rtvi-embed/rtvi-embed-docker-compose.yml` with profile `bp_developer_search_2d` (no full VSS profile)
-2. Standalone env: `RTVI_EMBED_PORT=8017`, writable `VSS_DATA_DIR` with `data_log/vst/clip_storage`, Kafka/Redis disabled for standalone
-3. First-boot warmup (`start_period: 1200s`) before declaring ready
-4. Live probes: `/v1/ready`, `/v1/models` (`cosmos-embed1-448p`), container `vss-rtvi-embed`
-5. No fabricated credentials
+- Security: checks whether skill-assisted execution avoids unsafe behavior such as secret leakage, destructive commands, or unauthorized access.
+- Correctness: checks whether the agent follows the expected workflow and produces the correct final output.
+- Discoverability: checks whether the agent loads the skill when relevant and avoids using it when irrelevant.
+- Effectiveness: checks whether the agent performs measurably better with the skill than without it.
+- Efficiency: checks whether the agent uses fewer tokens and avoids redundant work.
 
-## Manual Validation Results (RTX Pro)
+Underlying evaluation signals used in this run:
 
-All checks below passed on port **8017** using the standalone flow documented in `SKILL.md`.
+- `security` (Security): checks for unsafe operations, secret leakage, and unauthorized access.
+- `skill_execution` (Skill Execution): verifies that the agent loaded the expected skill and workflow.
+- `skill_efficiency` (Efficiency): checks routing quality, decoy avoidance, and redundant tool usage.
+- `accuracy` (Accuracy): grades final-answer correctness against the reference answer.
+- `goal_accuracy` (Goal Accuracy): checks whether the overall user task completed successfully.
+- `behavior_check` (Behavior Check): verifies expected behavior steps, including safety expectations.
+- `token_efficiency` (Token Efficiency): compares token usage with and without the skill.
 
-| Area | Result | Evidence |
-|---|---|---|
-| Deploy | ✅ PASS | `docker compose` + `bp_developer_search_2d`; standalone env (`VSS_DATA_DIR`, `RTVI_EMBED_KAFKA_ENABLED=false`, `ENABLE_REDIS_ERROR_MESSAGES=false`) |
-| Verify | ✅ PASS | `/v1/ready` 200; `/v1/models` reports `cosmos-embed1-448p` |
-| Text embeddings | ✅ PASS | `POST /v1/generate_text_embeddings` → non-empty `.data[0].embeddings` |
-| Video file embeddings | ✅ PASS | `POST /v1/files` + `POST /v1/generate_video_embeddings` → `chunk_responses` with embeddings |
-| Live RTSP SSE | ✅ PASS | `POST /v1/streams/add` + streaming embed → `data:` events with embeddings |
-| Metrics | ✅ PASS | `/v1/metrics`, `/v1/assets/stats` |
-| Credentials | ✅ PASS | Used host env keys; no fabricated tokens in operator output |
+## Test Tasks
 
-## Tier 3 Skills Eval (L40S)
+The benchmark dataset contained 2 evaluation tasks:
 
-**Not included in this report.** After a passing Skills Eval run on `standalone_deploy.json`, replace this section with the sanitized benchmark table (pattern: [PR #802](https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization/pull/802)).
+- Positive tasks: 2 tasks where the skill was expected to activate.
+- Negative tasks: 0 tasks where no skill was expected.
+- Unlabeled tasks: 0 tasks where positive/negative intent could not be inferred.
 
-To trigger a new run: open a PR that touches `skills/vss-deploy-video-embedding/`, then ask a PR vetter to comment:
+Task composition is derived from the evaluation dataset when possible. Entries with `expected_skill` set are treated as positive skill-activation cases, while entries with `expected_skill: null` are treated as negative activation cases.
 
-```text
-/ok to test <head-commit-sha>
-```
+## Results
 
-Request a dedicated L40S pool member (no concurrent trial on the same Brev instance) for a clean score.
+| Dimension | Num | `claude-code` | `codex` |
+|---|---:|---:|---:|
+| Security | 2 | 100% (+0%) | 100% (+0%) |
+| Correctness | 2 | 50% (+50%) | 50% (+50%) |
+| Discoverability | 2 | 0% (+0%) | 0% (+0%) |
+| Effectiveness | 2 | 88% (+75%) | 84% (+66%) |
+| Efficiency | 2 | 27% (-0%) | 28% (-0%) |
+
+Score values show skill-assisted performance. Values in parentheses show uplift versus the no-skill baseline when baseline data is available.
+
+## Tier 1: Static Validation Summary
+
+Tier 1 validation passed with observations. NVSkills-Eval ran 1 checks and found 3 total findings.
+
+Top findings:
+
+- MEDIUM SCHEMA/body_recommended_section: Missing recommended section: '## Instructions' (`skills/vss-deploy-video-embedding/SKILL.md`)
+- MEDIUM SCHEMA/body_recommended_section: Missing recommended section: '## Examples' (`skills/vss-deploy-video-embedding/SKILL.md`)
+- MEDIUM SCHEMA/author_missing: Author not specified in metadata (`skills/vss-deploy-video-embedding/SKILL.md`)
+
+## Tier 2: Deduplication Summary
+
+This tier was not run or did not produce findings in this report.
 
 ## Publication Recommendation
 
-The standalone deploy path and API operations documented in `SKILL.md` are **validated manually** and suitable to proceed toward publication. Refresh this file when a **passing** Tier 3 Skills Eval run completes or when the eval spec, skill behavior, or target platform materially changes.
+The skill is suitable to proceed toward NVSkills-Eval publication based on this benchmark. Skill owners should keep this file with the skill and refresh it when the evaluation dataset, skill behavior, or target agents materially change.

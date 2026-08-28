@@ -1,5 +1,5 @@
 ## Description: <br>
-Deploy and operate the RTVI-CV-3D stack (Multi-View 3D Tracking) — per-camera DeepStream perception plus BEV Fusion over multiple calibrated cameras. <br>
+Deploy and operate the RTVI-CV-3D microservice as MV3DT (MODE=mv3dt): per-camera DeepStream perception plus BEV Fusion over calibrated cameras. <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,23 +9,30 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache-2.0 <br>
 ## Use Case: <br>
-Developers and engineers deploying multi-camera 3D object detection and tracking pipelines using the NVIDIA Video Search and Summarization warehouse blueprint. <br>
+Developers and engineers deploying multi-camera 3D detection and tracking (MV3DT) using the NVIDIA VSS warehouse blueprint without the full agent, LLM, or VLM stack. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
+
+## Requirements / Dependencies: <br>
+**Requires API Key or External Credential:** [Yes] <br>
+**Credential Type(s):** [API key] <br>
+
+Do not include secrets in prompts/logs/output; use least-privilege credentials; rotate keys as appropriate. <br>
 
 ## Known Risks and Mitigations: <br>
 Risk: Review before execution as proposals could introduce incorrect or misleading guidance into skills. <br>
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
+- [Deploy RTVI-CV-3D Stack](references/deploy-rtvi-cv-3d-stack.md) <br>
+- [Calibration Workflow](references/calibration-workflow.md) <br>
+- [Configure Cameras](references/configure-cameras.md) <br>
+- [Verify and View](references/verify-and-view.md) <br>
+- [Teardown](references/teardown.md) <br>
+- [Troubleshooting](references/troubleshooting.md) <br>
 - [NVIDIA VSS Documentation](https://docs.nvidia.com/vss/latest/index.html) <br>
-- [Video Search and Summarization GitHub Repository](https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization) <br>
-- [deploy-rtvi-cv-3d-stack.md](references/deploy-rtvi-cv-3d-stack.md) <br>
-- [calibration-workflow.md](references/calibration-workflow.md) <br>
-- [configure-cameras.md](references/configure-cameras.md) <br>
-- [verify-and-view.md](references/verify-and-view.md) <br>
-- [troubleshooting.md](references/troubleshooting.md) <br>
+- [GitHub Repository](https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization) <br>
 
 
 ## Skill Output: <br>
@@ -34,8 +41,14 @@ Mitigation: Review and scan skill before deployment. <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
+## Evaluation Agents Used: <br>
+- `claude-code` <br>
+- `codex` <br>
+
+
+
 ## Evaluation Tasks: <br>
-3-Tier NVSkills-Eval benchmark (external profile); Tier 1 static validation (9 checks, 13 findings) and Tier 2 deduplication (2 checks, 0 findings) completed. Tier 3 live agent evaluation not available. <br>
+Evaluated against 3 evaluation tasks in astra-sandbox environment using NVSkills-Eval external profile with 50% pass threshold. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
@@ -45,10 +58,28 @@ Reported benchmark dimensions: <br>
 - Effectiveness: Checks whether the agent performs measurably better with the skill than without it. <br>
 - Efficiency: Checks whether the agent uses fewer tokens and avoids redundant work. <br>
 
+Underlying evaluation signals used in this run: <br>
+- `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
+- `skill_execution`: Verifies that the agent loaded the expected skill and workflow. <br>
+- `skill_efficiency`: Checks routing quality, decoy avoidance, and redundant tool usage. <br>
+- `accuracy`: Grades final-answer correctness against the reference answer. <br>
+- `goal_accuracy`: Checks whether the overall user task completed successfully. <br>
+- `behavior_check`: Verifies expected behavior steps, including safety expectations. <br>
+- `token_efficiency`: Compares token usage with and without the skill. <br>
 
+
+
+## Evaluation Results: <br>
+| Dimension | Num | `claude-code` | `codex` |
+|---|---:|---:|---:|
+| Security | 3 | 100% (+0%) | 100% (+0%) |
+| Correctness | 3 | 100% (+75%) | 83% (+52%) |
+| Discoverability | 3 | 94% (+56%) | 87% (+47%) |
+| Effectiveness | 3 | 74% (+68%) | 63% (+48%) |
+| Efficiency | 3 | 80% (+42%) | 81% (+33%) |
 
 ## Skill Version(s): <br>
-3.2.0 (source: frontmatter) <br>
+3.2.1 (source: frontmatter) <br>
 
 ## Ethical Considerations: <br>
 NVIDIA believes Trustworthy AI is a shared responsibility and we have established policies and practices to enable development for a wide array of AI applications. When downloaded or used in accordance with our terms of service, developers should work with their internal team to ensure this skill meets requirements for the relevant industry and use case and addresses unforeseen product misuse. <br>

@@ -31,8 +31,8 @@ Videos must be named `cam_00.mp4`, `cam_01.mp4`, … contiguous, no gaps.
 POST /v1/upload_video_files/<project_id>
 Content-Type: multipart/form-data
 
-video_files=@cam_00.mp4
-video_files=@cam_01.mp4
+files=@cam_00.mp4
+files=@cam_01.mp4
 ...
 ```
 
@@ -44,5 +44,5 @@ the correct order; the mode reference just feeds them into this endpoint.
 Once the mode-specific reference has uploaded videos, alignment, and layout
 (plus any optional GT zip / focal lengths), continue with the **Shared
 Calibration Tail** — see [SKILL.md Step A onward](../SKILL.md#step-a--verify-project)
-for the REST flow and `calibration-tail.md` for the
+for the REST flow and [`calibration-tail.md`](calibration-tail.md) for the
 shared Python snippet (verify → calibrate → poll → results).

@@ -8,12 +8,13 @@ The sample includes GT, so the run produces evaluation metrics (L2 distance, rep
 
 ## Mode-specific Prerequisites
 
+- **AMC platform preflight passes** — run [`deploy-auto-calibration-service.md` Step 0](deploy-auto-calibration-service.md#step-0--platform-preflight) before sample upload/calibration, even if the AMC service is already running. If Step 0 fails, report the unmet host requirement, stop instead of continuing the sample run, and ask the user to provide existing/generated calibration artifacts or run AMC on a supported calibration host.
 - **Sample zip present at `assets/sdg_08_2_sample_data_010926.zip`** — **the VSS repo does not ship this file.** See [Obtain the sample zip](#obtain-the-sample-zip) below.
 - **Python 3 with `requests` available** — or use the [Swagger UI walkthrough](#alternative-swagger-ui-walkthrough) below.
   - The inline run block self-heals: if `requests` is missing it creates a throwaway venv under `${TMPDIR:-/tmp}/amc-sample-test-venv` (nothing written to the repo).
   - If `python3 -m venv` itself fails with `ensurepip not available`, the inline block falls back to [`uv`](https://astral.sh/uv) (sudo-free, installed via `curl -LsSf https://astral.sh/uv/install.sh | sh`). If neither path is available: `sudo apt install -y python3-venv python3-pip` as a last resort.
 
-The shared AMC microservice prereq comes from the SKILL.md [Prerequisites](../SKILL.md#prerequisites-shared-across-modes) section.
+The shared AMC microservice prereq comes from the SKILL.md [Prerequisites](../SKILL.md#prerequisites-shared-across-calibration-modes) section.
 
 ## Quick Start for Agents
 
@@ -27,11 +28,12 @@ The shared AMC microservice prereq comes from the SKILL.md [Prerequisites](../SK
 
 **"test sample dataset" (MS already running):**
 
-1. Detect backend: scan ports 8000–8009 (and 8010) for a `/v1/ready` response.
-2. If none → walk `deploy-auto-calibration-service.md` first.
-3. Extract sample data if not already cached.
-4. Run the inline block (heredoc-piped Python — no file written).
-5. Report metrics.
+1. Run the platform preflight from `deploy-auto-calibration-service.md` Step 0.
+2. Detect backend: scan ports 8000–8009 (and 8010) for a `/v1/ready` response.
+3. If none → walk `deploy-auto-calibration-service.md` first.
+4. Extract sample data if not already cached.
+5. Run the inline block (heredoc-piped Python — no file written).
+6. Report metrics.
 
 ### Detect Running Backend
 
@@ -108,14 +110,17 @@ ls "$SAMPLE_DIR"
 
 ## Run Inline (No File Written)
 
-Run the test on the fly — pipe Python into `python3` via heredoc so nothing is saved into the user's repo. The block below is fully self-contained: it resolves `REPO_ROOT` via `git rev-parse`, reads `MS_PORT` from the warehouse-operations `.env`, picks (or creates) a Python with `requests` installed, and then pipes the inline script. Safe to copy/paste verbatim. Each invocation creates a fresh project.
+Run the test on the fly — pipe Python into `python3` via heredoc so nothing is saved into the user's repo. The block below is fully self-contained: it resolves `REPO_ROOT` via `git rev-parse`, reads `MS_PORT` and `HOST_IP` from the warehouse runtime override env, picks (or creates) a Python with `requests` installed, and then pipes the inline script. Safe to copy/paste verbatim. Each invocation creates a fresh project.
 
 ```bash
 # Resolve env
 export REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-ENV_FILE="$REPO_ROOT/deploy/docker/industry-profiles/warehouse-operations/.env"
-export MS_PORT="$(grep ^VSS_AUTO_CALIBRATION_PORT "$ENV_FILE" 2>/dev/null | cut -d= -f2)"
+ENV_STABLE="$REPO_ROOT/deploy/docker/industry-profiles/warehouse-operations/.env"
+ENV_RUNTIME="$REPO_ROOT/deploy/docker/industry-profiles/warehouse-operations/generated.env"
+[ -f "$ENV_RUNTIME" ] || ENV_RUNTIME="$REPO_ROOT/deploy/docker/industry-profiles/warehouse-operations/overrides.env"
+export MS_PORT="$(grep ^VSS_AUTO_CALIBRATION_HOST_PORT "$ENV_RUNTIME" 2>/dev/null | cut -d= -f2)"
 export MS_PORT="${MS_PORT:-8010}"
+HOST_IP="$(grep ^HOST_IP "$ENV_RUNTIME" 2>/dev/null | cut -d= -f2 | tr -d '"')"
 export BASE_URL="http://${HOST_IP:-localhost}:${MS_PORT}/v1"
 # Optional: export SAMPLE_DIR=/abs/path/to/extracted/sample to override autodetection
 
@@ -210,22 +215,24 @@ print(f"Videos:     {[v.name for v in videos]}")
 
 s = requests.Session()
 
-# Step 1 — Create project
+# Create the sample-dataset project
 project_name = f"sample_test_{int(time.time())}"
 r = s.post(f"{BASE_URL}/create_project", data={"project_name": project_name})
 r.raise_for_status()
 project_id = r.json()["project_id"]
 print(f"[1] Created project {project_name} → {project_id}")
 
-# Step 2 — Upload videos (sorted; upload order defines the camera indices).
-# Same multipart pattern as videos.md § "Step 2 — Upload videos (sorted)",
-# iterating over this script's `videos` (the bundled cam_*.mp4).
-files, handles = [], []
-for v in videos:
-    f = open(v, "rb"); handles.append(f)
-    files.append(("files", (v.name, f, "video/mp4")))
-r = s.post(f"{BASE_URL}/upload_video_files/{project_id}", files=files, timeout=300)
-for f in handles: f.close()
+# Upload the bundled sample cameras; order defines camera indices.
+upload_parts, open_files = [], []
+try:
+    for video_path in videos:
+        handle = video_path.open("rb")
+        open_files.append(handle)
+        upload_parts.append(("files", (video_path.name, handle, "video/mp4")))
+    r = s.post(f"{BASE_URL}/upload_video_files/{project_id}", files=upload_parts, timeout=300)
+finally:
+    for handle in open_files:
+        handle.close()
 r.raise_for_status()
 print(f"[2] Uploaded {len(videos)} videos")
 
@@ -311,8 +318,10 @@ Average reprojection error 0(px)     : < 10
 
 ```bash
 PROJECT_ID=<id_from_step_1>
-# Calibration log lives inside the MS container's working dir.
-docker exec vss-auto-calibration tail -F server/projects/project_${PROJECT_ID}/calibration.log
+# Calibration log lives under the projects dir, relative to the container
+# working directory. Use projects/...; do not prefix it with the
+# working-directory basename.
+docker exec vss-auto-calibration tail -F projects/project_${PROJECT_ID}/calibration.log
 ```
 
 Or stream MS logs:
@@ -327,6 +336,7 @@ docker logs -f vss-auto-calibration
 |---|---|
 | `requests` not installed | Inside a venv: `python3 -m venv venv && ./venv/bin/pip install requests`. If `python3 -m venv` fails (no `python3-venv` package, no sudo): use `uv` instead — `curl -LsSf https://astral.sh/uv/install.sh \| sh` then `uv venv venv && uv pip install --python venv/bin/python requests`. The inline run block already does this fallback chain automatically. |
 | `[2] Uploaded N videos` where N >> 4 | `SAMPLE_DIR` resolved to the repo root (or another over-broad path) and `rglob("cam_*.mp4")` swept stale videos from `.cache/`, `projects/`, etc. Stop the run (`POST /v1/stop_calibration/{id}`), delete the project (`DELETE /v1/delete_project/{id}`), set `SAMPLE_DIR` explicitly to the extracted sample dir, re-run. The script anchors on `videos/` and asserts `len(videos) <= 16` to fail loud. |
+| `create_project` returns `[Errno 13] Permission denied` | The host projects directory isn't writable by the container user (UID 1000). Run the write test in `deploy-auto-calibration-service.md` § Step 5, then grant access with `setfacl -m u:1000:rwx ${VSS_APPS_DIR}/services/auto-calibration/projects` and retry. |
 | `verify_project` returns state `!= READY` | Confirm all 4 videos + alignment + layout + GT uploaded; inspect `GET /v1/get_project_info/{id}` response. |
 | Sample zip not present at `assets/sdg_08_2_sample_data_010926.zip` | The VSS repo does not bundle it. Pull from GitHub LFS or a sibling AMC checkout — see [Obtain the sample zip](#obtain-the-sample-zip). |
 | Sample not extracted | `unzip <repo_root>/assets/sdg_08_2_sample_data_010926.zip -d <repo_root>/assets/.cache/sdg_08_2_sample_data_010926/` |

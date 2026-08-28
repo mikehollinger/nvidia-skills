@@ -17,7 +17,7 @@ The skill scans the **videos directory** and its **parent directory** for these 
 
 | File | Candidate filenames |
 |---|---|
-| Calibration settings | `settings.json`, `config.json`, `calibration_config.json` (UI Step 3 Download produces one of these). When provided, this file replaces the entire UI Step 3 Parameters dialog. If they don't have a file, ask which detector to use separately (see below). |
+| Calibration settings | `calibration_settings.json`, `settings.json`, `config.json`, `calibration_config.json` (UI Step 3 Download produces one of these). When provided, this file replaces the entire UI Step 3 Parameters dialog. If they don't have a file, ask which detector to use separately (see below). |
 | Alignment JSON | `alignment_data.json` |
 | Layout PNG | `layout.png` |
 
@@ -27,19 +27,25 @@ See the [Settings File + Detector Pattern](../SKILL.md#settings-file--detector-p
 4. **Detector type** — see [SKILL.md § Step B — Start Calibration](../SKILL.md#step-b--start-calibration) for the `resnet` vs `transformer` choice and the
    AskUserQuestion fallback. When a config file is provided, the script extracts
    the detector automatically.
+5. **Parameter tuning** — also ask whether to proceed with the default calibration parameters or tune them in the UI (Step 3: Parameters) first. See [SKILL.md § Step B](../SKILL.md#step-b--start-calibration) for the exact prompt.
 
 ### Optional
 5. **Ground truth zip** — `GT.zip` with `_World_Cameras_Camera_XX/` folders (enables evaluation metrics).
 6. **Focal lengths** — one per camera, e.g. `1269.0, 1099.5, 1099.5`.
-7. **Run VGGT refinement?** — only if VGGT model is staged (see `deploy-auto-calibration-service.md` Step 2).
+
+VGGT refinement is handled after AMC completes by [SKILL.md Step E](../SKILL.md#step-e--vggt-refinement). Do not collect a separate videos-mode VGGT flag; staging the model is optional during deployment, and missing VGGT must not block the AMC run.
 
 Root `README.md` "Custom Dataset" section documents input-video guidelines and ground-truth format.
 
 ## API Call Sequence (videos mode)
 
-### Step 1 — Create Project
+### Step 0 — Platform Preflight
 
-See [`common-steps.md` § Create project](common-steps.md#create-project). Save the returned `project_id`.
+Run [`deploy-auto-calibration-service.md` Step 0](deploy-auto-calibration-service.md#step-0--platform-preflight) before project creation, upload, or calibration, even if the AMC service is already running. If Step 0 fails, report the unmet host requirement and stop; ask the user to provide existing calibration artifacts or run calibration on a supported host.
+
+### Step 1 — Initialize Videos Run
+
+Create the project with the shared request in [`common-steps.md`](common-steps.md#create-project), then keep `project_id` for the upload calls.
 
 ### Step 2 — Upload Videos (required)
 
@@ -97,11 +103,11 @@ focal_length=1269.0&focal_length=1099.5&...
 
 ### Step 5 — Hand off to the Shared Calibration Tail
 
-Once uploads are done (and any UI fallback confirmed on disk), continue with [SKILL.md Step A onward](../SKILL.md#step-a--verify-project) (verify → calibrate → poll → results).
+Once uploads are done (and any UI fallback confirmed on disk), continue with [SKILL.md Step A onward](../SKILL.md#step-a--verify-project) (verify → calibrate → poll → results). Use [`calibration-tail.md`](calibration-tail.md) for the shared Python snippet.
 
 ---
 
-## Complete Python Script
+## Videos Mode Python Script
 
 ```python
 import os
@@ -123,7 +129,7 @@ LAYOUT_PNG     = None                                   # e.g. Path("/path/to/la
 GT_ZIP         = None                                   # optional: Path("/path/to/GT.zip")
 FOCAL_LENGTHS  = None                                   # optional: [1269.0, 1099.5]
 DETECTOR_TYPE  = "resnet"                               # "resnet" or "transformer" (overridden if CONFIG_FILE pins it)
-RUN_VGGT       = False
+RUN_VGGT_IF_READY = False  # Set True if the user requested VGGT or staged VGGT in this run
 
 # Projects dir on the host (for verifying manual alignment output).
 # Bind-mounted into the MS container from $VSS_APPS_DIR/services/auto-calibration/projects
@@ -152,19 +158,19 @@ def _resolve_local(override, candidate_names, scan_dirs, label):
     return None
 
 _scan_dirs = [VIDEO_DIR, VIDEO_DIR.parent]
-CONFIG_FILE    = _resolve_local(CONFIG_FILE,    ["settings.json", "config.json", "calibration_config.json"], _scan_dirs, "config")
+CONFIG_FILE    = _resolve_local(CONFIG_FILE,    ["calibration_settings.json", "settings.json", "config.json", "calibration_config.json"], _scan_dirs, "config")
 ALIGNMENT_JSON = _resolve_local(ALIGNMENT_JSON, ["alignment_data.json"],                                       _scan_dirs, "alignment")
 LAYOUT_PNG     = _resolve_local(LAYOUT_PNG,     ["layout.png"],                                                _scan_dirs, "layout")
 
 s = requests.Session()
 
-# Step 1 — Create project
+# Create the videos-mode project
 r = s.post(f"{BASE_URL}/create_project", data={"project_name": PROJECT_NAME})
 r.raise_for_status()
 project_id = r.json()["project_id"]
 print(f"[1] Created project: {project_id}")
 
-# Step 2 — Upload videos (sorted)
+# Upload videos alphabetically so camera indices are stable
 files, handles = [], []
 for v in VIDEO_FILES:
     f = open(v, "rb"); handles.append(f)
@@ -238,27 +244,27 @@ if ui_tasks:
         )
         print(f"    Alignment files verified at {manual_dir}")
 
-# Step A/B/C/D — see references/calibration-tail.md for the shared snippet
-# (verify_project → calibrate → poll get_project_info → fetch evaluation_statistics)
+# Paste references/calibration-tail.md here before VGGT refinement.
 
-# Step E — VGGT (optional)
-if RUN_VGGT:
-    info = s.get(f"{BASE_URL}/get_project_info/{project_id}").json()
-    vggt_state = info.get("project_info", {}).get("vggt_state", "INIT")
-    if vggt_state == "READY":
-        s.post(f"{BASE_URL}/vggt/calibrate/{project_id}").raise_for_status()
-        print("\n[E] VGGT started")
-        t0 = time.time()
-        while time.time() - t0 < 900:
-            vs = s.get(f"{BASE_URL}/get_project_info/{project_id}").json() \
-                .get("project_info", {}).get("vggt_state", "INIT")
-            if vs == "COMPLETED":
-                print("     VGGT done"); break
-            if vs == "ERROR":
-                raise RuntimeError("VGGT failed")
-            time.sleep(10)
-    else:
-        print(f"\n[E] VGGT not ready (state={vggt_state}) — skipping")
+# Step E — VGGT refinement
+info = s.get(f"{BASE_URL}/get_project_info/{project_id}").json()
+vggt_state = info.get("project_info", {}).get("vggt_state", "INIT")
+if vggt_state == "READY" and RUN_VGGT_IF_READY:
+    s.post(f"{BASE_URL}/vggt/calibrate/{project_id}").raise_for_status()
+    print("\n[E] VGGT started")
+    t0 = time.time()
+    while time.time() - t0 < 900:
+        vs = s.get(f"{BASE_URL}/get_project_info/{project_id}").json() \
+            .get("project_info", {}).get("vggt_state", "INIT")
+        if vs == "COMPLETED":
+            print("     VGGT done"); break
+        if vs == "ERROR":
+            raise RuntimeError("VGGT failed")
+        time.sleep(10)
+elif vggt_state == "READY":
+    print("\n[E] VGGT is ready. Ask whether to run refinement; set RUN_VGGT_IF_READY=True for direct-mode runs.")
+else:
+    print(f"\n[E] VGGT not ready (state={vggt_state}) — skipping. VGGT refinement is available after staging the model.")
 
 print(f"\nProject: {project_id}")
 print(f"Final camera parameters: ${{VSS_APPS_DIR}}/services/auto-calibration/projects/project_{project_id}/output/multi_view_results/BA_output/results_ba/refined/camInfo_XX.yaml")
